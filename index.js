@@ -10,20 +10,26 @@ require('dotenv').config();
 const app = express();
 const apiKey = process.env.OPENAI_API_KEY;
 
+// CORSの設定
 app.use(cors());
+
+// multerの設定：ファイルのアップロード先
 const upload = multer({ dest: 'uploads/' });
 
+// PDFファイルからテキストを抽出する関数
 async function extractTextFromPDF(filePath) {
     const dataBuffer = fs.readFileSync(filePath);
     const data = await pdfParse(dataBuffer);
     return data.text;
 }
 
+// Wordファイルからテキストを抽出する関数
 async function extractTextFromWord(filePath) {
     const data = await mammoth.extractRawText({ path: filePath });
     return data.value;
 }
 
+// OpenAI APIを使用してリース条項の判定を行う関数
 async function getCompletion(content) {
     const prompt = `
 #あなたの役割
@@ -95,11 +101,12 @@ ${content}
         );
         return response.data.choices[0].message.content.trim();
     } catch (error) {
-        console.error('サーバー側でエラーが発生しました:', error);
+        console.error('APIリクエストエラー:', error);
         return "エラーが発生しました。";
     }
 }
 
+// ファイルアップロードのエンドポイント
 app.post('/upload', upload.single('file'), async (req, res) => {
     try {
         console.log('アップロードされたファイルのMIMEタイプ:', req.file.mimetype);
@@ -126,8 +133,10 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     }
 });
 
+// 静的ファイルの提供
 app.use(express.static(__dirname));
 
+// サーバー起動
 const PORT = process.env.PORT || 3003;
 app.listen(PORT, () => {
     console.log(`サーバーが起動しました: http://localhost:${PORT}`);
