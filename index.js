@@ -10,10 +10,12 @@ require('dotenv').config();
 const app = express();
 const apiKey = process.env.OPENAI_API_KEY;
 
-// CORSの設定
-app.use(cors());
+// CORSの設定：外部アクセスを許可
+app.use(cors({
+    origin: '*' // 必要に応じて、特定のドメインに限定も可能
+}));
 
-// multerの設定：ファイルのアップロード先
+// ファイルのアップロード設定
 const upload = multer({ dest: 'uploads/' });
 
 // PDFファイルからテキストを抽出する関数
@@ -29,7 +31,7 @@ async function extractTextFromWord(filePath) {
     return data.value;
 }
 
-// OpenAI APIを使用してリース条項の判定を行う関数
+// OpenAI APIを使ってリース条項の判定を行う関数
 async function getCompletion(content) {
     const prompt = `
 #あなたの役割
@@ -106,7 +108,7 @@ ${content}
     }
 }
 
-// ファイルアップロードのエンドポイント
+// ファイルアップロードエンドポイント
 app.post('/upload', upload.single('file'), async (req, res) => {
     try {
         console.log('アップロードされたファイルのMIMEタイプ:', req.file.mimetype);
@@ -137,7 +139,8 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 app.use(express.static(__dirname));
 
 // サーバー起動
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || 8080; // Railwayで適切なポートが指定される
+console.log("使用するポート:", PORT);
 app.listen(PORT, () => {
     console.log(`サーバーが起動しました: http://localhost:${PORT}`);
 });
