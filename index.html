@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>契約書リース識別</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f7f9fc;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        h2 {
+            color: #0056b3;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        input[type="file"] {
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #0056b3;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #004494;
+        }
+        .result-container {
+            margin-top: 30px;
+            padding: 15px;
+            background-color: #eaf4fe;
+            border-radius: 8px;
+        }
+        .result-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #0056b3;
+            margin-bottom: 10px;
+        }
+        .result-content {
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        .result-content strong {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>契約書をアップロードしてリース条項を確認する</h2>
+        <form id="uploadForm">
+            <input type="file" id="fileInput" accept=".pdf, .docx" required />
+            <button type="submit">アップロードして確認</button>
+        </form>
+        <div class="result-container" id="resultContainer" style="display: none;">
+            <div class="result-title">結果</div>
+            <div class="result-content" id="resultText"></div>
+            <div class="result-title">理由</div>
+            <div class="result-content" id="reasonText"></div>
+            <div class="result-title">引用</div>
+            <div class="result-content" id="quoteText"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('http://localhost:3003/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const resultText = await response.text();
+
+                // 結果の分割処理
+                const resultContainer = document.getElementById('resultContainer');
+                const resultElement = document.getElementById('resultText');
+                const reasonElement = document.getElementById('reasonText');
+                const quoteElement = document.getElementById('quoteText');
+
+                // 正規表現を使って結果、理由、引用を分ける
+                const resultMatch = resultText.match(/結果:\s*(.*?)(?=\s*理由:|$)/);
+                const reasonMatch = resultText.match(/理由:\s*(.*?)(?=\s*引用:|$)/);
+                const quoteMatch = resultText.match(/引用:\s*(.*)/);
+
+                resultElement.textContent = resultMatch ? resultMatch[1] : "情報が見つかりませんでした。";
+                reasonElement.textContent = reasonMatch ? reasonMatch[1] : "情報が見つかりませんでした。";
+                quoteElement.textContent = quoteMatch ? quoteMatch[1] : "情報が見つかりませんでした。";
+
+                resultContainer.style.display = 'block';
+            } catch (error) {
+                document.getElementById('resultContainer').style.display = 'block';
+                document.getElementById('resultText').textContent = 'エラーが発生しました。';
+                console.error('エラーが発生しました:', error);
+            }
+        });
+    </script>
+</body>
+</html>
