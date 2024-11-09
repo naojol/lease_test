@@ -9,6 +9,7 @@ require('dotenv').config();
 
 const app = express();
 const apiKey = process.env.OPENAI_API_KEY;
+console.log("API Key:", apiKey); // デバッグ用（公開環境では削除）
 
 app.use(cors());
 const upload = multer({ dest: 'uploads/' });
