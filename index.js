@@ -128,7 +128,8 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 
 app.use(express.static(__dirname));
 
-const PORT = process.env.PORT || 3003;
+// index.js
+const PORT = process.env.PORT || 3003;  // 環境変数PORTがあればそれを使用、なければ3003
 app.listen(PORT, () => {
     console.log(`サーバーが起動しました: http://localhost:${PORT}`);
 });
