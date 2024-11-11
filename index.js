@@ -2,7 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import OpenAI from 'openai';
+import { Configuration, OpenAIApi } from 'openai';
 import fs from 'fs';
 import pdfParse from 'pdf-parse';
 import dotenv from 'dotenv';
@@ -10,28 +10,29 @@ import dotenv from 'dotenv';
 // 環境変数の読み込み
 dotenv.config();
 
+// OpenAIの設定
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
+
 // Expressアプリの初期化
 const app = express();
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
-
-// CORSを有効にする
 app.use(cors());
 
-// Multerを使ってファイルアップロードを設定
+// Multerの設定（ファイルのアップロード用）
 const upload = multer({ dest: 'uploads/' });
 
-// PDFの内容をテキストに変換する関数
+// PDFファイルからテキストを抽出する関数
 async function extractTextFromPDF(filePath) {
-    const dataBuffer = fs.readFileSync(filePath);
-    const data = await pdfParse(dataBuffer);
-    return data.text;
+  const dataBuffer = fs.readFileSync(filePath);
+  const data = await pdfParse(dataBuffer);
+  return data.text;
 }
 
-// OpenAI APIを使ってPDF内容を分析する関数
+// OpenAI APIを使用してPDFの内容を解析する関数
 async function analyzePDF(pdfContent) {
-    const prompt = `
+  const prompt = `
 #あなたの役割
 ・あなたは公認会計士です。
 ・新リース会計基準に則ってユーザが提供する契約書にリースが含まれるかどうかの識別を行います。
@@ -79,61 +80,54 @@ async function analyzePDF(pdfContent) {
     借手と貸手の処理: "リースを含む契約は、リース部分と非リース部分を分けて会計処理"
 
 以下はユーザが提供した契約書の内容です:
-    
-    ${pdfContent}
-    `;
-    
-    try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            temperature: 0.7
-        });
-        return response.choices[0].message.content;
-    } catch (error) {
-        console.error('Error:', error);
-        throw new Error("OpenAI APIの呼び出しに失敗しました。");
-    }
+
+  ${pdfContent}
+  `;
+
+  try {
+    const response = await openai.createChatCompletion({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+    });
+    return response.data.choices[0].message.content;
+  } catch (error) {
+    console.error('Error:', error);
+    throw new Error('OpenAI APIの呼び出しに失敗しました。');
+  }
 }
 
-// POSTリクエストでファイルをアップロードし、PDF内容を分析するエンドポイント
+// ファイルアップロードのエンドポイント
 app.post('/upload', upload.single('file'), async (req, res) => {
-    try {
-        console.log('アップロードされたファイルのMIMEタイプ:', req.file.mimetype);
+  try {
+    const filePath = req.file.path;
+    const mimeType = req.file.mimetype;
 
-        const filePath = req.file.path;
-        const mimeType = req.file.mimetype;
-
-        // ファイルの形式に応じてテキストを抽出
-        let content;
-        if (mimeType === 'application/pdf' || mimeType === 'application/octet-stream') {
-            content = await extractTextFromPDF(filePath);
-        } else {
-            return res.status(400).send("サポートされていないファイル形式です。PDFファイルを使用してください。");
-        }
-
-        // OpenAI APIでPDF内容を分析
-        const result = await analyzePDF(content);
-        res.send(result);
-
-        // アップロードされたファイルを削除
-        fs.unlinkSync(filePath);
-    } catch (error) {
-        console.error('サーバー側でエラーが発生しました:', error);
-        res.status(500).send("サーバー側でエラーが発生しました。");
+    // PDFファイルのみを処理
+    if (mimeType !== 'application/pdf') {
+      return res.status(400).send('サポートされていないファイル形式です。PDFファイルを使用してください。');
     }
+
+    // PDFからテキストを抽出
+    const content = await extractTextFromPDF(filePath);
+
+    // OpenAI APIで解析
+    const result = await analyzePDF(content);
+    res.send(result);
+
+    // アップロードされたファイルを削除
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    console.error('サーバー側でエラーが発生しました:', error);
+    res.status(500).send('サーバー側でエラーが発生しました。');
+  }
 });
 
-// 静的ファイルの提供（フロントエンド用のindex.htmlなど）
+// 静的ファイルの提供（HTMLフロントエンドのため）
 app.use(express.static(__dirname));
 
-// サーバーを指定されたポートで起動
+// サーバーの起動
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`サーバーが起動しました: http://localhost:${PORT}`);
+  console.log(`サーバーが起動しました: http://localhost:${PORT}`);
 });
