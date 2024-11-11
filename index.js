@@ -1,42 +1,29 @@
-// 必要なモジュールのインポート
-import express from 'express';
-import cors from 'cors';
-import multer from 'multer';
-import fs from 'fs';
-import pdfParse from 'pdf-parse';
-import mammoth from 'mammoth';
-import OpenAI from 'openai';
-import dotenv from 'dotenv';
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+const axios = require('axios');
+const fs = require('fs');
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
+require('dotenv').config();
 
-// 環境変数の読み込み
-dotenv.config();
-
-// OpenAI APIキーの設定
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Expressアプリの設定
 const app = express();
+const apiKey = process.env.OPENAI_API_KEY;
+
+app.use(cors());
 const upload = multer({ dest: 'uploads/' });
 
-// CORSの有効化
-app.use(cors());
-
-// PDFファイルのテキスト抽出関数
 async function extractTextFromPDF(filePath) {
     const dataBuffer = fs.readFileSync(filePath);
     const data = await pdfParse(dataBuffer);
     return data.text;
 }
 
-// Wordファイルのテキスト抽出関数
 async function extractTextFromWord(filePath) {
     const data = await mammoth.extractRawText({ path: filePath });
     return data.value;
 }
 
-// OpenAI APIへのリクエスト関数
 async function getCompletion(content) {
     const prompt = `
 #あなたの役割
@@ -91,20 +78,28 @@ ${content}
     `;
 
     try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: prompt }],
-            max_tokens: 500,
-            temperature: 0.5
-        });
-        return response.choices[0].message.content.trim();
+        const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+                model: "gpt-4o-mini",
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: 500,
+                temperature: 0.5
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+        return response.data.choices[0].message.content.trim();
     } catch (error) {
         console.error('サーバー側でエラーが発生しました:', error);
         return "エラーが発生しました。";
     }
 }
 
-// ファイルアップロードとAPIリクエスト処理
 app.post('/upload', upload.single('file'), async (req, res) => {
     try {
         console.log('アップロードされたファイルのMIMEタイプ:', req.file.mimetype);
@@ -131,11 +126,18 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     }
 });
 
-// 静的ファイルの配信設定
-app.use(express.static(__dirname));
+app.get('/', (req, res) => {
+    res.send(`
+        <h2>契約書をアップロードしてリース条項を確認する</h2>
+        <form action="/upload" method="POST" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".pdf, .docx" required />
+            <button type="submit">アップロードして確認</button>
+        </form>
+        <div class="result" id="result"></div>
+    `);
+});
 
-// サーバーのポート設定
-const PORT = process.env.PORT || 3003;
+const PORT = 3003;
 app.listen(PORT, () => {
     console.log(`サーバーが起動しました: http://localhost:${PORT}`);
 });
