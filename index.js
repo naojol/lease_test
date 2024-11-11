@@ -1,38 +1,44 @@
-// 必要なモジュールをインポート
+// 必要なモジュールのインポート
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { Configuration, OpenAIApi } from 'openai';
 import fs from 'fs';
 import pdfParse from 'pdf-parse';
+import mammoth from 'mammoth';
+import OpenAI from 'openai';
 import dotenv from 'dotenv';
 
 // 環境変数の読み込み
 dotenv.config();
 
-// OpenAIの設定
-const configuration = new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
+// OpenAI APIキーの設定
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAIApi(configuration);
 
-// Expressアプリの初期化
+// Expressアプリの設定
 const app = express();
-app.use(cors());
-
-// Multerの設定（ファイルのアップロード用）
 const upload = multer({ dest: 'uploads/' });
 
-// PDFファイルからテキストを抽出する関数
+// CORSの有効化
+app.use(cors());
+
+// PDFファイルのテキスト抽出関数
 async function extractTextFromPDF(filePath) {
-  const dataBuffer = fs.readFileSync(filePath);
-  const data = await pdfParse(dataBuffer);
-  return data.text;
+    const dataBuffer = fs.readFileSync(filePath);
+    const data = await pdfParse(dataBuffer);
+    return data.text;
 }
 
-// OpenAI APIを使用してPDFの内容を解析する関数
-async function analyzePDF(pdfContent) {
-  const prompt = `
+// Wordファイルのテキスト抽出関数
+async function extractTextFromWord(filePath) {
+    const data = await mammoth.extractRawText({ path: filePath });
+    return data.value;
+}
+
+// OpenAI APIへのリクエスト関数
+async function getCompletion(content) {
+    const prompt = `
 #あなたの役割
 ・あなたは公認会計士です。
 ・新リース会計基準に則ってユーザが提供する契約書にリースが含まれるかどうかの識別を行います。
@@ -81,53 +87,55 @@ async function analyzePDF(pdfContent) {
 
 以下はユーザが提供した契約書の内容です:
 
-  ${pdfContent}
-  `;
+${content}
+    `;
 
-  try {
-    const response = await openai.createChatCompletion({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-    });
-    return response.data.choices[0].message.content;
-  } catch (error) {
-    console.error('Error:', error);
-    throw new Error('OpenAI APIの呼び出しに失敗しました。');
-  }
+    try {
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 500,
+            temperature: 0.5
+        });
+        return response.choices[0].message.content.trim();
+    } catch (error) {
+        console.error('サーバー側でエラーが発生しました:', error);
+        return "エラーが発生しました。";
+    }
 }
 
-// ファイルアップロードのエンドポイント
+// ファイルアップロードとAPIリクエスト処理
 app.post('/upload', upload.single('file'), async (req, res) => {
-  try {
-    const filePath = req.file.path;
-    const mimeType = req.file.mimetype;
+    try {
+        console.log('アップロードされたファイルのMIMEタイプ:', req.file.mimetype);
 
-    // PDFファイルのみを処理
-    if (mimeType !== 'application/pdf') {
-      return res.status(400).send('サポートされていないファイル形式です。PDFファイルを使用してください。');
+        const filePath = req.file.path;
+        const mimeType = req.file.mimetype;
+
+        let content;
+        if (mimeType === 'application/pdf' || mimeType === 'application/octet-stream') {
+            content = await extractTextFromPDF(filePath);
+        } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            content = await extractTextFromWord(filePath);
+        } else {
+            return res.status(400).send("サポートされていないファイル形式です。PDFまたはWordファイルを使用してください。");
+        }
+
+        const result = await getCompletion(content);
+        res.send(result);
+
+        fs.unlinkSync(filePath);
+    } catch (error) {
+        console.error('サーバー側でエラーが発生しました:', error);
+        res.status(500).send("サーバー側でエラーが発生しました。");
     }
-
-    // PDFからテキストを抽出
-    const content = await extractTextFromPDF(filePath);
-
-    // OpenAI APIで解析
-    const result = await analyzePDF(content);
-    res.send(result);
-
-    // アップロードされたファイルを削除
-    fs.unlinkSync(filePath);
-  } catch (error) {
-    console.error('サーバー側でエラーが発生しました:', error);
-    res.status(500).send('サーバー側でエラーが発生しました。');
-  }
 });
 
-// 静的ファイルの提供（HTMLフロントエンドのため）
+// 静的ファイルの配信設定
 app.use(express.static(__dirname));
 
-// サーバーの起動
-const PORT = process.env.PORT || 3000;
+// サーバーのポート設定
+const PORT = process.env.PORT || 3003;
 app.listen(PORT, () => {
-  console.log(`サーバーが起動しました: http://localhost:${PORT}`);
+    console.log(`サーバーが起動しました: http://localhost:${PORT}`);
 });
